@@ -1,6 +1,6 @@
 [project]
 name = "pytaxonomies"
-version = "2.1.1"
+version = "2.1.2"
 description = "Python API for the taxonomies."
 authors = [{name="Raphaël Vinot", email="raphael.vinot@circl.lu"}]
 license = "BSD-3-Clause"
