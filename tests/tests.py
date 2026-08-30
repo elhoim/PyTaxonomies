@@ -2,8 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import json
+import os
 import unittest
 import uuid
+
+from unittest import mock
 
 from pytaxonomies import Taxonomies
 import pytaxonomies.api
@@ -107,6 +110,52 @@ class TestPyTaxonomies(unittest.TestCase):
             if invalid_uuids:
                 print(invalid_uuids)
                 raise Exception(f'Invalid UUIDs in {taxonomy.name}')
+
+    def test_manifest_url_and_path_are_mutually_exclusive(self):
+        def no_network(url):
+            raise AssertionError(f'no HTTP request expected, got {url}')
+
+        # requests.exceptions.MissingSchema is itself a ValueError, so make sure
+        # the error comes from the argument check and not from a failed request.
+        with mock.patch.object(pytaxonomies.api.requests, 'get', side_effect=no_network):
+            with self.assertRaisesRegex(ValueError, 'mutually exclusive'):
+                Taxonomies(
+                    manifest_url='https://raw.githubusercontent.com/MISP/misp-taxonomies/main/MANIFEST.json',
+                    manifest_path=os.path.join(self.taxonomies_offline.url, 'MANIFEST.json'))
+
+    def test_url_and_loader_consistent_with_manifest_path(self):
+        manifest_path = os.path.join(self.taxonomies_offline.url, 'MANIFEST.json')
+        taxonomies = Taxonomies(manifest_path=manifest_path)
+        self.assertEqual(taxonomies.loader.__func__,
+                         pytaxonomies.api.Taxonomies._Taxonomies__load_path)
+        self.assertEqual(taxonomies.url, os.path.dirname(os.path.realpath(manifest_path)))
+
+    def test_url_and_loader_consistent_with_manifest_url(self):
+        root = self.taxonomies_offline.url
+        requested = []
+
+        def fake_get(url):
+            requested.append(url)
+            if url.endswith('/MANIFEST.json'):
+                local = os.path.join(root, 'MANIFEST.json')
+            else:
+                local = os.path.join(root, url.rsplit('/', 2)[-2], url.rsplit('/', 1)[-1])
+            with open(local, 'r') as f:
+                content = json.load(f)
+            response = mock.Mock()
+            response.json.return_value = content
+            return response
+
+        manifest_url = 'https://example.org/misp-taxonomies/MANIFEST.json'
+        with mock.patch.object(pytaxonomies.api.requests, 'get', side_effect=fake_get):
+            taxonomies = Taxonomies(manifest_url=manifest_url)
+        self.assertEqual(taxonomies.loader.__func__,
+                         pytaxonomies.api.Taxonomies._Taxonomies__load_url)
+        self.assertEqual(taxonomies.url, taxonomies.manifest['url'])
+        # every taxonomy is fetched through the URL loader, never a filesystem path
+        self.assertEqual(requested[0], manifest_url)
+        for url in requested[1:]:
+            self.assertTrue(url.startswith(taxonomies.url), url)
 
 
 if __name__ == "__main__":
