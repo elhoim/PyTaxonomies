@@ -5,7 +5,7 @@ import json
 import unittest
 import uuid
 
-from pytaxonomies import Taxonomies
+from pytaxonomies import Taxonomies, Taxonomy, Predicate, Entry
 import pytaxonomies.api
 
 
@@ -26,35 +26,93 @@ class TestPyTaxonomies(unittest.TestCase):
         self.assertEqual(str(taxonomies_online), str(self.taxonomies_offline))
 
     def test_expanded_machinetags(self):
-        self.taxonomies_offline.all_machinetags(expanded=True)
+        all_expanded = self.taxonomies_offline.all_machinetags(expanded=True)
+        self.assertEqual(len(all_expanded), len(self.taxonomies_offline))
+        for taxonomy, expanded in zip(self.taxonomies_offline.values(), all_expanded):
+            self.assertIsInstance(expanded, list)
+            self.assertTrue(expanded, taxonomy.name)
+            # one expanded machine tag per machine tag, and both start with the namespace
+            self.assertEqual(len(expanded), len(taxonomy.machinetags()))
+            for mt in expanded:
+                self.assertIsInstance(mt, str)
+                self.assertTrue(mt.startswith(f'{taxonomy.name}:'), mt)
 
     def test_machinetags(self):
-        self.taxonomies_offline.all_machinetags()
+        all_machinetags = self.taxonomies_offline.all_machinetags()
+        self.assertEqual(len(all_machinetags), len(self.taxonomies_offline))
+        for taxonomy, machinetags in zip(self.taxonomies_offline.values(), all_machinetags):
+            self.assertIsInstance(machinetags, list)
+            self.assertTrue(machinetags, taxonomy.name)
+            self.assertEqual(machinetags, taxonomy.machinetags())
+            for mt in machinetags:
+                self.assertIsInstance(mt, str)
+                self.assertTrue(mt.startswith(f'{taxonomy.name}:'), mt)
+        flat = [mt for machinetags in all_machinetags for mt in machinetags]
+        # a well known tag every consumer relies on
+        self.assertIn('tlp:red', flat)
 
     def test_dict(self):
-        len(self.taxonomies_offline)
+        self.assertEqual(len(self.taxonomies_offline),
+                         len(self.taxonomies_offline.manifest['taxonomies']))
         for n, t in self.taxonomies_offline.items():
-            len(t)
+            self.assertIsInstance(t, Taxonomy)
+            self.assertEqual(n, t.name)
+            self.assertEqual(len(t), len(t.predicates))
+            self.assertTrue(len(t), n)
             for p, value in t.items():
-                continue
+                self.assertIsInstance(value, Predicate)
+                self.assertEqual(p, value.predicate)
+                for k, entry in value.items():
+                    self.assertIsInstance(entry, Entry)
+                    self.assertEqual(k, entry.value)
 
     def test_search(self):
-        self.taxonomies_offline.search('phish')
+        results = self.taxonomies_offline.search('phish')
+        self.assertTrue(results)
+        all_machinetags = {mt for machinetags in self.taxonomies_offline.all_machinetags()
+                           for mt in machinetags}
+        for mt in results:
+            self.assertIsInstance(mt, str)
+            self.assertIn('phish', mt.lower())
+            self.assertIn(mt, all_machinetags)
+        self.assertIn('CERT-XLM:fraud="phishing"', results)
+        self.assertEqual(self.taxonomies_offline.search('nosuchthinginanytaxonomy'), [])
 
     def test_search_expanded(self):
-        self.taxonomies_offline.search('phish', expanded=True)
+        results = self.taxonomies_offline.search('phish', expanded=True)
+        self.assertTrue(results)
+        all_expanded = {mt for machinetags in self.taxonomies_offline.all_machinetags(expanded=True)
+                        for mt in machinetags}
+        for mt in results:
+            self.assertIsInstance(mt, str)
+            self.assertIn('phish', mt.lower())
+            self.assertIn(mt, all_expanded)
+        self.assertIn('CERT-XLM:fraud="Phishing"', results)
+        self.assertEqual(self.taxonomies_offline.search('nosuchthinginanytaxonomy',
+                                                        expanded=True), [])
 
     def test_print_classes(self):
+        self.assertTrue(str(self.taxonomies_offline))
         for taxonomy in self.taxonomies_offline.values():
-            print(taxonomy)
+            self.assertEqual(str(taxonomy), '\n'.join(taxonomy.machinetags()))
+            self.assertTrue(str(taxonomy), taxonomy.name)
             for predicate in taxonomy.values():
-                print(predicate)
+                self.assertEqual(str(predicate), predicate.predicate)
+                self.assertTrue(str(predicate), taxonomy.name)
                 for entry in predicate.values():
-                    print(entry)
+                    self.assertEqual(str(entry), entry.value)
+                    self.assertTrue(str(entry), taxonomy.name)
 
     def test_amountEntries(self):
         for tax in self.taxonomies_offline.values():
-            tax.amount_entries()
+            amount = tax.amount_entries()
+            self.assertIsInstance(amount, int)
+            self.assertGreater(amount, 0, tax.name)
+            # every counted entry has a machine tag, but predicates without entries
+            # are only counted when the taxonomy has no entries at all
+            self.assertLessEqual(amount, len(tax.machinetags()), tax.name)
+            if not tax.has_entries():
+                self.assertEqual(amount, len(tax.keys()), tax.name)
 
     def test_missingDependency(self):
         pytaxonomies.api.HAS_REQUESTS = False
