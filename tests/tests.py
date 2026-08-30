@@ -44,6 +44,14 @@ class TestPyTaxonomies(unittest.TestCase):
     def test_search_expanded(self):
         self.taxonomies_offline.search('phish', expanded=True)
 
+    def test_search_no_duplicates(self):
+        # A machine tag matching the query on more than one of its tokens
+        # (namespace, predicate, entry) must still be returned only once.
+        for expanded in (False, True):
+            results = self.taxonomies_offline.search('misp', expanded=expanded)
+            self.assertTrue(results)
+            self.assertEqual(len(results), len(set(results)))
+
     def test_print_classes(self):
         for taxonomy in self.taxonomies_offline.values():
             print(taxonomy)
