@@ -44,6 +44,14 @@ class TestPyTaxonomies(unittest.TestCase):
     def test_search_expanded(self):
         self.taxonomies_offline.search('phish', expanded=True)
 
+    def test_search_value_with_colon(self):
+        # The value of a machine tag can contain a colon, and must remain
+        # findable by its literal text.
+        tag = 'aviation:target-sub-systems="ATM:NewPENS"'
+        self.assertIn(tag, self.taxonomies_offline['aviation'].machinetags())
+        self.assertIn(tag, self.taxonomies_offline.search('ATM:NewPENS'))
+        self.assertIn(tag, self.taxonomies_offline.search('atm:newpens'))
+
     def test_print_classes(self):
         for taxonomy in self.taxonomies_offline.values():
             print(taxonomy)

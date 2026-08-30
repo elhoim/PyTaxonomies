@@ -317,6 +317,22 @@ class Taxonomies(abc.Mapping):  # type: ignore
             to_print += "{}\n\n".format(str(taxonomy))
         return to_print
 
+    @staticmethod
+    def _split_machinetag(machinetag: str) -> List[str]:
+        """Split a machine tag into its namespace, predicate and (optional) value.
+
+        The value is kept as a single token, even when it contains a colon:
+        this is the same structure revert_machinetag() relies on.
+        """
+        if '=' in machinetag:
+            parsed = re.findall('^([^:]*):([^=]*)="([^"]*)"$', machinetag)
+        else:
+            parsed = re.findall('^([^:]*):([^=]*)$', machinetag)
+        if not parsed:
+            # Not a well-formed machine tag, fall back on a naive split.
+            return [e for e in re.findall('[^:="]*', machinetag) if e]
+        return [e for e in parsed[0] if e]
+
     def search(self, query: str, expanded: bool=False) -> List[str]:
         query = query.lower()
         to_return = []
@@ -326,7 +342,7 @@ class Taxonomies(abc.Mapping):  # type: ignore
             else:
                 machinetags = taxonomy.machinetags()
             for mt in machinetags:
-                entries = [e.lower() for e in re.findall('[^:="]*', mt) if e]
+                entries = [e.lower() for e in self._split_machinetag(mt)]
                 for e in entries:
                     if e.startswith(query) or e.endswith(query):
                         to_return.append(mt)
