@@ -111,6 +111,7 @@ class TestPyTaxonomies(unittest.TestCase):
                 print(invalid_uuids)
                 raise Exception(f'Invalid UUIDs in {taxonomy.name}')
 
+    @unittest.skipUnless(pytaxonomies.api.HAS_REQUESTS, 'requires the optional remote extra')
     def test_manifest_url_and_path_are_mutually_exclusive(self):
         def no_network(url):
             raise AssertionError(f'no HTTP request expected, got {url}')
@@ -130,6 +131,7 @@ class TestPyTaxonomies(unittest.TestCase):
                          pytaxonomies.api.Taxonomies._Taxonomies__load_path)
         self.assertEqual(taxonomies.url, os.path.dirname(os.path.realpath(manifest_path)))
 
+    @unittest.skipUnless(pytaxonomies.api.HAS_REQUESTS, 'requires the optional remote extra')
     def test_url_and_loader_consistent_with_manifest_url(self):
         root = self.taxonomies_offline.url
         requested = []
@@ -152,10 +154,14 @@ class TestPyTaxonomies(unittest.TestCase):
         self.assertEqual(taxonomies.loader.__func__,
                          pytaxonomies.api.Taxonomies._Taxonomies__load_url)
         self.assertEqual(taxonomies.url, taxonomies.manifest['url'])
-        # every taxonomy is fetched through the URL loader, never a filesystem path
+        # every taxonomy is fetched as a URL, never as a filesystem path - this is
+        # what broke: self.url was overwritten with a directory while the URL loader
+        # was still selected, and requests.get raised MissingSchema on the result.
         self.assertEqual(requested[0], manifest_url)
+        self.assertGreater(len(requested), 1)
         for url in requested[1:]:
-            self.assertTrue(url.startswith(taxonomies.url), url)
+            self.assertRegex(url, r'^https?://', url)
+            self.assertFalse(os.path.isabs(url), url)
 
 
 if __name__ == "__main__":
