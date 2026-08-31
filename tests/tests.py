@@ -19,6 +19,27 @@ class TestPyTaxonomies(unittest.TestCase):
             with open('{}/{}/{}'.format(self.taxonomies_offline.url, t['name'], 'machinetag.json'), 'r') as f:
                 self.loaded_tax[t['name']] = json.load(f)
 
+    def machinetags_from_raw_json(self, name):
+        """Machine tags derived straight from the bundled machinetag.json.
+
+        Deliberately does not go through the API, so the assertions below compare
+        the API against the data rather than against itself.
+        """
+        raw = self.loaded_tax[name]
+        entries = {}
+        for v in raw.get('values') or []:
+            entries.setdefault(v['predicate'], []).extend(e['value'] for e in v['entry'])
+        to_return = []
+        for p in raw['predicates']:
+            if isinstance(p, str):
+                continue
+            if entries.get(p['value']):
+                to_return.extend(f'{raw["namespace"]}:{p["value"]}="{e}"'
+                                 for e in entries[p['value']])
+            else:
+                to_return.append(f'{raw["namespace"]}:{p["value"]}')
+        return to_return
+
     def test_compareOnlineOffilne(self):
         taxonomies_online = Taxonomies(manifest_url='https://raw.githubusercontent.com/MISP/misp-taxonomies/main/MANIFEST.json')
         for t_online, t_offline in zip(taxonomies_online.values(), self.taxonomies_offline.values()):
@@ -43,7 +64,7 @@ class TestPyTaxonomies(unittest.TestCase):
         for taxonomy, machinetags in zip(self.taxonomies_offline.values(), all_machinetags):
             self.assertIsInstance(machinetags, list)
             self.assertTrue(machinetags, taxonomy.name)
-            self.assertEqual(machinetags, taxonomy.machinetags())
+            self.assertEqual(machinetags, self.machinetags_from_raw_json(taxonomy.name))
             for mt in machinetags:
                 self.assertIsInstance(mt, str)
                 self.assertTrue(mt.startswith(f'{taxonomy.name}:'), mt)
@@ -57,7 +78,8 @@ class TestPyTaxonomies(unittest.TestCase):
         for n, t in self.taxonomies_offline.items():
             self.assertIsInstance(t, Taxonomy)
             self.assertEqual(n, t.name)
-            self.assertEqual(len(t), len(t.predicates))
+            self.assertEqual(len(t), len([p for p in self.loaded_tax[n]['predicates']
+                                          if not isinstance(p, str)]))
             self.assertTrue(len(t), n)
             for p, value in t.items():
                 self.assertIsInstance(value, Predicate)
@@ -94,14 +116,15 @@ class TestPyTaxonomies(unittest.TestCase):
     def test_print_classes(self):
         self.assertTrue(str(self.taxonomies_offline))
         for taxonomy in self.taxonomies_offline.values():
-            self.assertEqual(str(taxonomy), '\n'.join(taxonomy.machinetags()))
-            self.assertTrue(str(taxonomy), taxonomy.name)
+            raw = self.loaded_tax[taxonomy.name]
+            self.assertEqual(str(taxonomy).split('\n'),
+                             self.machinetags_from_raw_json(taxonomy.name))
+            raw_predicates = {p['value'] for p in raw['predicates'] if not isinstance(p, str)}
+            raw_entries = {e['value'] for v in raw.get('values') or [] for e in v['entry']}
             for predicate in taxonomy.values():
-                self.assertEqual(str(predicate), predicate.predicate)
-                self.assertTrue(str(predicate), taxonomy.name)
+                self.assertIn(str(predicate), raw_predicates)
                 for entry in predicate.values():
-                    self.assertEqual(str(entry), entry.value)
-                    self.assertTrue(str(entry), taxonomy.name)
+                    self.assertIn(str(entry), raw_entries)
 
     def test_amountEntries(self):
         for tax in self.taxonomies_offline.values():
